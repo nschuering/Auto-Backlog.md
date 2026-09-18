@@ -4,6 +4,7 @@ title: Add autonomous task execution runner
 status: To Do
 assignee: []
 created_date: '2026-09-18 17:12'
+updated_date: '2026-09-18 17:18'
 labels: []
 dependencies: []
 ordinal: 319000
@@ -23,6 +24,7 @@ Tasks on the Kanban board can already use any configured status string, but ther
 - [ ] #4 A failed or interrupted run leaves the task in a state a human can understand and resume (task is not left silently stuck or duplicated on the next run)
 - [ ] #5 The trigger and review status names are read from project config, not hardcoded
 - [ ] #6 Behavior is documented in CLI help and in a guide analogous to doc-003 showing how to schedule the command with cron/systemd/launchd/Task Scheduler
+- [ ] #7 A configurable per-task timeout stops a run that hangs or runs too long, leaving the task in the same human-resumable state as a failed run, so one stuck task cannot block the rest of the queue indefinitely
 <!-- AC:END -->
 
 ## Definition of Done
