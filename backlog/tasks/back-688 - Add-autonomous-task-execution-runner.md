@@ -1,10 +1,11 @@
 ---
 id: BACK-688
 title: Add autonomous task execution runner
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-18 17:12'
-updated_date: '2026-09-18 17:18'
+updated_date: '2026-09-18 17:36'
 labels: []
 dependencies: []
 ordinal: 319000
@@ -33,3 +34,29 @@ Tasks on the Kanban board can already use any configured status string, but ther
 - [ ] #2 bun run check . passes when formatting/linting touched
 - [ ] #3 bun test (or scoped test) passes
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Config (src/types/index.ts, src/constants/index.ts, src/core/backlog.ts, src/cli.ts, src/file-system/operations.ts):
+   - Add optional BacklogConfig fields: autonomousTriggerStatus, autonomousReviewStatus (strings, must resolve via getCanonicalStatus against configured statuses), autonomousTaskTimeoutMinutes (positive number), autonomousAgentCommand (string template, default invokes `claude`).
+   - Mirror existing checkActiveBranches/activeBranchDays pattern for defaults, CONFIG_AVAILABLE_KEYS, config get/set/list switch-cases, and YAML raw coercion in file-system/operations.ts (drop otherwise on round-trip).
+   - Feature is disabled (no-op) whenever autonomousTriggerStatus is unset/empty.
+   - Fail closed (per manifesto principle 5) if autonomousReviewStatus is unset, unresolvable, or equal to the trigger status.
+
+2. Core.runAutonomousTasks() in src/core/backlog.ts:
+   - Load config; short-circuit no-op per above.
+   - core.queryTasks({ filters: { status: triggerStatus }, includeCrossBranch: false }), stable ordering by ordinal/id.
+   - Per task, sequentially (never parallel): fs.withTaskLock(task, async () => { reload task; skip if status changed since the initial query (someone else moved it); spawn the configured agent command with the task id substituted in, using the execGit timeout/kill-process-group pattern (src/git/operations.ts ~1081-1180) bounded by autonomousTaskTimeoutMinutes; on success move status trigger -> review via editTask; on failure/timeout append an implementation note explaining what happened and leave status unchanged so the task is retried next run and a human can see why }).
+   - Return a summary (processed/movedToReview/failed/skipped) for CLI output.
+
+3. CLI: `backlog task run-autonomous` bare subcommand (src/cli.ts, modeled on the `task list`/`task archive` action pattern) with --plain output, no positional task id (queries by configured status instead). Prints a clear message and exits 0 when the feature is not configured.
+
+4. Docs: CLI help text, and a new doc analogous to doc-003 showing how to schedule `backlog task run-autonomous` via cron/systemd timer/launchd/Task Scheduler.
+
+5. Tests: src/test/cli-task-run-autonomous.test.ts mirroring src/test/cli-task-state.test.ts fixture setup - covers no-op-when-unconfigured, happy path (trigger -> review), timeout handling, and skip-when-locked-by-concurrent-edit.
+
+Open decisions needing explicit confirmation before implementation (flagged to Alex separately, not started yet):
+   - Exact default autonomousAgentCommand template and what non-interactive/permission flags it passes to the spawned agent process.
+   - Whether the review status must already exist in the configured `statuses` list (fail closed) or may be auto-appended.
+<!-- SECTION:PLAN:END -->
