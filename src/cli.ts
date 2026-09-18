@@ -21,7 +21,13 @@ import { registerInstructionsCommand } from "./commands/instructions.ts";
 import { registerMcpCommand } from "./commands/mcp.ts";
 import { pickTaskForEditWizard, runTaskCreateWizard, runTaskEditWizard } from "./commands/task-wizard.ts";
 import { watchJson } from "./commands/watch-json.ts";
-import { DEFAULT_DIRECTORIES, DEFAULT_FILES, DEFAULT_STATUSES } from "./constants/index.ts";
+import {
+	DEFAULT_AUTONOMOUS_AGENT_COMMAND,
+	DEFAULT_AUTONOMOUS_TASK_TIMEOUT_MINUTES,
+	DEFAULT_DIRECTORIES,
+	DEFAULT_FILES,
+	DEFAULT_STATUSES,
+} from "./constants/index.ts";
 import { type DuplicateRepairPlan, findLocalDuplicateTaskIds } from "./core/duplicate-task-repair.ts";
 import { initializeProject } from "./core/init.ts";
 import { buildMilestoneBuckets, collectArchivedMilestoneKeys, milestoneKey } from "./core/milestones.ts";
@@ -171,6 +177,10 @@ const CONFIG_GET_KEYS = [
 	"zeroPaddedIds",
 	"checkActiveBranches",
 	"activeBranchDays",
+	"autonomousTriggerStatus",
+	"autonomousReviewStatus",
+	"autonomousTaskTimeoutMinutes",
+	"autonomousAgentCommand",
 ] as const;
 
 const CONFIG_SET_KEYS = [
@@ -189,6 +199,10 @@ const CONFIG_SET_KEYS = [
 	"zeroPaddedIds",
 	"checkActiveBranches",
 	"activeBranchDays",
+	"autonomousTriggerStatus",
+	"autonomousReviewStatus",
+	"autonomousTaskTimeoutMinutes",
+	"autonomousAgentCommand",
 ] as const;
 
 function normalizeIntegrationOption(value: string): IntegrationMode | null {
@@ -3994,6 +4008,56 @@ addHelpSchema(taskCmd.command("complete <taskId>"), {
 		}
 	});
 
+addHelpSchema(taskCmd.command("run-autonomous"), {
+	required: [],
+	optional: [],
+	reads: "Local editable tasks whose status matches the configured autonomousTriggerStatus",
+	writes:
+		"Runs the configured agent command against each matched task, one at a time, and moves successful runs to autonomousReviewStatus. A failed or timed-out run leaves the task's status unchanged and records the failure in its implementation notes.",
+	output:
+		"A summary of tasks moved to review, failed, or skipped; a message and exit code 0 when the feature is not configured",
+	examples: ["backlog task run-autonomous"],
+})
+	.description("run the configured agent against every task in the autonomous trigger status")
+	.action(async () => {
+		const cwd = await requireProjectRoot();
+		const core = new Core(cwd);
+		try {
+			const result = await core.runAutonomousTasks();
+			if (result.disabled) {
+				console.log(
+					'autonomousTriggerStatus is not configured; nothing to run. Set it with: backlog config set autonomousTriggerStatus "<status>"',
+				);
+				return;
+			}
+
+			if (result.outcomes.length === 0) {
+				console.log("No tasks are in the configured autonomous trigger status.");
+				return;
+			}
+
+			for (const outcome of result.outcomes) {
+				switch (outcome.result) {
+					case "movedToReview":
+						console.log(`${outcome.taskId}: moved to review`);
+						break;
+					case "failed":
+						console.log(`${outcome.taskId}: failed (${outcome.detail})`);
+						break;
+					case "skipped":
+						console.log(`${outcome.taskId}: skipped (${outcome.detail})`);
+						break;
+				}
+			}
+			const failedCount = result.outcomes.filter((outcome) => outcome.result === "failed").length;
+			if (failedCount > 0) {
+				process.exitCode = 1;
+			}
+		} catch (err) {
+			reportCommandFailure("Failed to run autonomous tasks", err);
+		}
+	});
+
 taskCmd
 	.command("demote <taskId>")
 	.description("move task back to drafts")
@@ -5087,7 +5151,7 @@ agentsCmd
 
 // Config command group
 const CONFIG_AVAILABLE_KEYS =
-	"Available keys: defaultEditor, projectName, defaultAssignee, defaultStatus, statuses, labels, priorities, types, projects, milestones, definitionOfDone, dateFormat, maxColumnWidth, defaultPort, autoOpenBrowser, hideEmptyColumns, remoteOperations, autoCommit, filesystemOnly, bypassGitHooks, zeroPaddedIds, checkActiveBranches, activeBranchDays";
+	"Available keys: defaultEditor, projectName, defaultAssignee, defaultStatus, statuses, labels, priorities, types, projects, milestones, definitionOfDone, dateFormat, maxColumnWidth, defaultPort, autoOpenBrowser, hideEmptyColumns, remoteOperations, autoCommit, filesystemOnly, bypassGitHooks, zeroPaddedIds, checkActiveBranches, activeBranchDays, autonomousTriggerStatus, autonomousReviewStatus, autonomousTaskTimeoutMinutes, autonomousAgentCommand";
 
 const configCmd = addHelpSchema(program.command("config"), {
 	reads: "Project Backlog.md configuration",
@@ -5278,6 +5342,20 @@ addHelpSchema(configCmd.command("get <key>"), {
 					break;
 				case "activeBranchDays":
 					console.log(config.activeBranchDays?.toString() || "30");
+					break;
+				case "autonomousTriggerStatus":
+					console.log(config.autonomousTriggerStatus || "(not set)");
+					break;
+				case "autonomousReviewStatus":
+					console.log(config.autonomousReviewStatus || "(not set)");
+					break;
+				case "autonomousTaskTimeoutMinutes":
+					console.log(
+						config.autonomousTaskTimeoutMinutes?.toString() || DEFAULT_AUTONOMOUS_TASK_TIMEOUT_MINUTES.toString(),
+					);
+					break;
+				case "autonomousAgentCommand":
+					console.log(config.autonomousAgentCommand || DEFAULT_AUTONOMOUS_AGENT_COMMAND);
 					break;
 				default:
 					console.error(`Unknown config key: ${key}`);
@@ -5470,6 +5548,48 @@ addHelpSchema(configCmd.command("set <key> <value>"), {
 					config.activeBranchDays = days;
 					break;
 				}
+				case "autonomousTriggerStatus": {
+					if (!value) {
+						config.autonomousTriggerStatus = undefined;
+						break;
+					}
+					const canonical = await getCanonicalStatus(value, core);
+					if (!canonical) {
+						console.error(
+							`autonomousTriggerStatus must be one of the project's configured statuses: ${(await getValidStatuses(core)).join(", ")}`,
+						);
+						process.exit(1);
+					}
+					config.autonomousTriggerStatus = canonical;
+					break;
+				}
+				case "autonomousReviewStatus": {
+					if (!value) {
+						config.autonomousReviewStatus = undefined;
+						break;
+					}
+					const canonical = await getCanonicalStatus(value, core);
+					if (!canonical) {
+						console.error(
+							`autonomousReviewStatus must be one of the project's configured statuses: ${(await getValidStatuses(core)).join(", ")}`,
+						);
+						process.exit(1);
+					}
+					config.autonomousReviewStatus = canonical;
+					break;
+				}
+				case "autonomousTaskTimeoutMinutes": {
+					const minutes = Number.parseInt(value, 10);
+					if (Number.isNaN(minutes) || minutes <= 0) {
+						console.error("autonomousTaskTimeoutMinutes must be a positive number");
+						process.exit(1);
+					}
+					config.autonomousTaskTimeoutMinutes = minutes;
+					break;
+				}
+				case "autonomousAgentCommand":
+					config.autonomousAgentCommand = value || undefined;
+					break;
 				case "statuses":
 				case "labels":
 				case "types":
@@ -5565,6 +5685,12 @@ addHelpSchema(configCmd.command("list"), {
 			console.log(`  taskPrefix: ${config.prefixes?.task || "task"} (read-only)`);
 			console.log(`  checkActiveBranches: ${config.checkActiveBranches ?? "true"}`);
 			console.log(`  activeBranchDays: ${config.activeBranchDays ?? "30"}`);
+			console.log(`  autonomousTriggerStatus: ${config.autonomousTriggerStatus || "(not set)"}`);
+			console.log(`  autonomousReviewStatus: ${config.autonomousReviewStatus || "(not set)"}`);
+			console.log(
+				`  autonomousTaskTimeoutMinutes: ${config.autonomousTaskTimeoutMinutes ?? DEFAULT_AUTONOMOUS_TASK_TIMEOUT_MINUTES}`,
+			);
+			console.log(`  autonomousAgentCommand: ${config.autonomousAgentCommand || DEFAULT_AUTONOMOUS_AGENT_COMMAND}`);
 		} catch (err) {
 			reportCommandFailure("Failed to list config values", err);
 		}

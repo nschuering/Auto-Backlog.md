@@ -356,6 +356,14 @@ export interface BacklogConfig {
 	backlogDirectory?: string;
 	/** Global callback command to run on any task status change. Supports $TASK_ID, $OLD_STATUS, $NEW_STATUS, $TASK_TITLE variables. */
 	onStatusChange?: string;
+	/** Status that marks a task ready for unattended agent execution via `backlog task run-autonomous`. Unset disables the command (no-op). */
+	autonomousTriggerStatus?: string;
+	/** Status a task moves to after a successful unattended run, for human review before it can reach a terminal status. Must already be a configured status; never used for the trigger status itself. */
+	autonomousReviewStatus?: string;
+	/** Maximum minutes an unattended run may take before it is killed and the task is left for human review. Defaults to DEFAULT_AUTONOMOUS_TASK_TIMEOUT_MINUTES. */
+	autonomousTaskTimeoutMinutes?: number;
+	/** Command `backlog task run-autonomous` runs per matched task. Supports $TASK_ID, $TASK_TITLE variables. Defaults to DEFAULT_AUTONOMOUS_AGENT_COMMAND. */
+	autonomousAgentCommand?: string;
 	/** ID prefix configuration for tasks and drafts. Defaults to { task: "task", draft: "draft" } */
 	prefixes?: PrefixConfig;
 	mcp?: {

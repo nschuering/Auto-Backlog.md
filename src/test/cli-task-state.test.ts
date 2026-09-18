@@ -345,4 +345,38 @@ describe("CLI Integration", () => {
 			expect(backToTask?.rawContent).toContain(originalTask.rawContent);
 		});
 	});
+
+	describe("task run-autonomous command", () => {
+		beforeEach(async () => {
+			const core = new Core(TEST_DIR);
+			await initializeFilesystemTestProject(core, "Run Autonomous Test Project");
+		});
+
+		it("reports the configured trigger status is missing and exits 0", async () => {
+			const result = await $`bun ${CLI_PATH} task run-autonomous`.cwd(TEST_DIR).nothrow().quiet();
+
+			expect(result.exitCode).toBe(0);
+			expect(result.stdout.toString()).toContain("autonomousTriggerStatus is not configured");
+		});
+
+		it("moves a matched task to the review status and reports success", async () => {
+			const core = new Core(TEST_DIR);
+			const config = await core.filesystem.loadConfig();
+			if (!config) throw new Error("Expected config to exist after project init");
+			await core.filesystem.saveConfig({
+				...config,
+				statuses: ["To Do", "Autonom", "Review", "Done"],
+				autonomousTriggerStatus: "Autonom",
+				autonomousReviewStatus: "Review",
+				autonomousAgentCommand: "exit 0",
+			});
+			const { task } = await core.createTaskFromInput({ title: "CLI autonomous task", status: "Autonom" });
+
+			const result = await $`bun ${CLI_PATH} task run-autonomous`.cwd(TEST_DIR).nothrow().quiet();
+
+			expect(result.exitCode).toBe(0);
+			expect(result.stdout.toString()).toContain(`${task.id}: moved to review`);
+			expect((await core.loadTaskById(task.id))?.status).toBe("Review");
+		});
+	});
 });

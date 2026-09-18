@@ -51,6 +51,20 @@ export const DEFAULT_STATUSES = ["To Do", "In Progress", "Done"] as const;
 export const FALLBACK_STATUS = "To Do";
 
 /**
+ * Default per-task timeout (in minutes) for `backlog task run-autonomous`, used when
+ * autonomousTriggerStatus is configured but autonomousTaskTimeoutMinutes is not.
+ */
+export const DEFAULT_AUTONOMOUS_TASK_TIMEOUT_MINUTES = 30;
+
+/**
+ * Default command `backlog task run-autonomous` runs per matched task when
+ * autonomousAgentCommand is not configured. $TASK_ID and $TASK_TITLE are injected as
+ * environment variables.
+ */
+export const DEFAULT_AUTONOMOUS_AGENT_COMMAND =
+	"claude --print --dangerously-skip-permissions \"Read and fully implement backlog task $TASK_ID following this project's task-execution and task-finalization instructions. Do not change the task's status yourself.\"";
+
+/**
  * Default task types, used when no `types` are configured
  */
 export const DEFAULT_TASK_TYPES = ["bug", "feature", "enhancement", "task", "chore", "docs", "spike"] as const;

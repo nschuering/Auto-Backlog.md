@@ -2163,6 +2163,19 @@ ${description || `Milestone: ${title}`}`,
 					// Remove surrounding quotes if present, but preserve inner content
 					config.onStatusChange = value.replace(/^['"]|['"]$/g, "");
 					break;
+				case "autonomous_trigger_status":
+					config.autonomousTriggerStatus = value.replace(/['"]/g, "");
+					break;
+				case "autonomous_review_status":
+					config.autonomousReviewStatus = value.replace(/['"]/g, "");
+					break;
+				case "autonomous_task_timeout_minutes":
+					config.autonomousTaskTimeoutMinutes = Number.parseInt(value, 10);
+					break;
+				case "autonomous_agent_command":
+					// Remove surrounding quotes if present, but preserve inner content
+					config.autonomousAgentCommand = value.replace(/^['"]|['"]$/g, "");
+					break;
 				case "task_prefix":
 					config.prefixes = { task: value.replace(/['"]/g, "") };
 					break;
@@ -2198,6 +2211,10 @@ ${description || `Milestone: ${title}`}`,
 			checkActiveBranches: config.checkActiveBranches,
 			activeBranchDays: config.activeBranchDays,
 			onStatusChange: config.onStatusChange,
+			autonomousTriggerStatus: config.autonomousTriggerStatus,
+			autonomousReviewStatus: config.autonomousReviewStatus,
+			autonomousTaskTimeoutMinutes: config.autonomousTaskTimeoutMinutes,
+			autonomousAgentCommand: config.autonomousAgentCommand,
 			prefixes: config.prefixes,
 			backlogDirectory: config.backlogDirectory,
 		};
@@ -2240,6 +2257,12 @@ ${description || `Milestone: ${title}`}`,
 				: []),
 			...(typeof config.activeBranchDays === "number" ? [`active_branch_days: ${config.activeBranchDays}`] : []),
 			...(config.onStatusChange ? [`onStatusChange: '${config.onStatusChange}'`] : []),
+			...(config.autonomousTriggerStatus ? [`autonomous_trigger_status: "${config.autonomousTriggerStatus}"`] : []),
+			...(config.autonomousReviewStatus ? [`autonomous_review_status: "${config.autonomousReviewStatus}"`] : []),
+			...(typeof config.autonomousTaskTimeoutMinutes === "number"
+				? [`autonomous_task_timeout_minutes: ${config.autonomousTaskTimeoutMinutes}`]
+				: []),
+			...(config.autonomousAgentCommand ? [`autonomous_agent_command: '${config.autonomousAgentCommand}'`] : []),
 			...(config.prefixes?.task ? [`task_prefix: "${config.prefixes.task}"`] : []),
 			...(config.backlogDirectory ? [`backlog_directory: "${config.backlogDirectory}"`] : []),
 		];

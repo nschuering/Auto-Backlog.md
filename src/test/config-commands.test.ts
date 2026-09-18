@@ -180,6 +180,32 @@ describe("Config commands", () => {
 		expect(listOutput).toContain("hideEmptyColumns: true");
 	});
 
+	it("round-trips the autonomous runner settings through config get/set/list", async () => {
+		const defaultTimeout = await $`bun ${CLI_PATH} config get autonomousTaskTimeoutMinutes`.cwd(TEST_DIR).text();
+		expect(defaultTimeout.trim()).toBe("30");
+
+		const unsetTrigger = await $`bun ${CLI_PATH} config get autonomousTriggerStatus`.cwd(TEST_DIR).text();
+		expect(unsetTrigger.trim()).toBe("(not set)");
+
+		await $`bun ${CLI_PATH} config set autonomousTriggerStatus ${"in progress"}`.cwd(TEST_DIR).quiet();
+		await $`bun ${CLI_PATH} config set autonomousTaskTimeoutMinutes 45`.cwd(TEST_DIR).quiet();
+
+		const afterSet = await $`bun ${CLI_PATH} config get autonomousTriggerStatus`.cwd(TEST_DIR).text();
+		// Case/space-insensitive input resolves to the configured status's canonical spelling.
+		expect(afterSet.trim()).toBe("In Progress");
+
+		const listOutput = await $`bun ${CLI_PATH} config list`.cwd(TEST_DIR).text();
+		expect(listOutput).toContain("autonomousTriggerStatus: In Progress");
+		expect(listOutput).toContain("autonomousTaskTimeoutMinutes: 45");
+
+		const invalidStatus = await $`bun ${CLI_PATH} config set autonomousReviewStatus Nonexistent`
+			.cwd(TEST_DIR)
+			.nothrow()
+			.quiet();
+		expect(invalidStatus.exitCode).not.toBe(0);
+		expect(invalidStatus.stderr.toString()).toContain("autonomousReviewStatus must be one of");
+	});
+
 	it("parses block-style YAML sequences identically to inline arrays for list keys", () => {
 		const inline = core.filesystem.parseConfig(
 			'project_name: "P"\nstatuses: ["To Do", "Done"]\nlabels: ["a", "b"]\ntypes: ["bug", "epic"]\npriorities: ["Critical", "Low"]\n',

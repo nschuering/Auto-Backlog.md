@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-18 17:12'
-updated_date: '2026-09-18 17:36'
+updated_date: '2026-09-18 17:44'
 labels: []
 dependencies: []
 ordinal: 319000
@@ -59,4 +59,14 @@ Tasks on the Kanban board can already use any configured status string, but ther
 Open decisions needing explicit confirmation before implementation (flagged to Alex separately, not started yet):
    - Exact default autonomousAgentCommand template and what non-interactive/permission flags it passes to the spawned agent process.
    - Whether the review status must already exist in the configured `statuses` list (fail closed) or may be auto-appended.
+
+Confirmed decisions (Alex, 2026-09-18):
+   - autonomousAgentCommand defaults to a command that passes --dangerously-skip-permissions (or the equivalent full-autonomy flag) so the unattended run never blocks on an interactive approval; the field stays configurable so Alex can tighten it later. The Review-status gate is the safety net for the resulting changes, not the agent's own permission prompts.
+   - autonomousReviewStatus must already be present in the project's configured `statuses` list; the runner fails closed with a clear error and does not mutate the statuses list itself.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented config fields (autonomousTriggerStatus, autonomousReviewStatus, autonomousTaskTimeoutMinutes, autonomousAgentCommand), Core.runAutonomousTasks(), and the 'backlog task run-autonomous' CLI command. tsc and biome check pass. Next: doc-003-style scheduling guide and tests.
+<!-- SECTION:NOTES:END -->

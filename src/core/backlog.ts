@@ -1,6 +1,12 @@
 import { rename as moveFile, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
-import { DEFAULT_DIRECTORIES, DEFAULT_STATUSES, FALLBACK_STATUS } from "../constants/index.ts";
+import {
+	DEFAULT_AUTONOMOUS_AGENT_COMMAND,
+	DEFAULT_AUTONOMOUS_TASK_TIMEOUT_MINUTES,
+	DEFAULT_DIRECTORIES,
+	DEFAULT_STATUSES,
+	FALLBACK_STATUS,
+} from "../constants/index.ts";
 import {
 	type DraftFileReference,
 	DraftIdentityError,
@@ -183,6 +189,18 @@ interface TaskQueryOptions {
 interface TaskReadOptions {
 	includeCrossBranch?: boolean;
 	refreshCrossBranch?: boolean;
+}
+
+export interface AutonomousTaskOutcome {
+	taskId: string;
+	result: "movedToReview" | "failed" | "skipped";
+	detail?: string;
+}
+
+export interface AutonomousRunResult {
+	/** True when autonomousTriggerStatus is not configured; no tasks were queried or run. */
+	disabled: boolean;
+	outcomes: AutonomousTaskOutcome[];
 }
 
 interface ActiveBranchSnapshot {
@@ -2875,6 +2893,82 @@ export class Core {
 		} catch (error) {
 			console.error(`Failed to execute status change callback for ${task.id}:`, error);
 		}
+	}
+
+	/**
+	 * Run the configured agent command against every task in autonomousTriggerStatus, one at a
+	 * time. A successful run moves the task to autonomousReviewStatus; a failed or timed-out run
+	 * leaves the task's status unchanged and records why, so it is retried next time and a human
+	 * can see what happened. No-op when autonomousTriggerStatus is not configured.
+	 */
+	async runAutonomousTasks(): Promise<AutonomousRunResult> {
+		const config = await this.fs.loadConfig();
+		const triggerStatus = config?.autonomousTriggerStatus;
+		if (!triggerStatus) {
+			return { disabled: true, outcomes: [] };
+		}
+
+		const reviewStatus = await resolveCanonicalStatus(config?.autonomousReviewStatus, this);
+		if (!reviewStatus) {
+			throw new Error(
+				`autonomousReviewStatus is not set to one of this project's configured statuses. Set it with: backlog config set autonomousReviewStatus "<status>"`,
+			);
+		}
+		if (reviewStatus === triggerStatus) {
+			throw new Error("autonomousReviewStatus must differ from autonomousTriggerStatus.");
+		}
+
+		const agentCommand = config?.autonomousAgentCommand || DEFAULT_AUTONOMOUS_AGENT_COMMAND;
+		const timeoutMinutes = config?.autonomousTaskTimeoutMinutes ?? DEFAULT_AUTONOMOUS_TASK_TIMEOUT_MINUTES;
+		const timeoutMs = timeoutMinutes * 60_000;
+
+		const tasks = await this.queryTasks({ filters: { status: triggerStatus }, includeCrossBranch: false });
+		const orderedTasks = [...tasks].sort((a, b) => (a.ordinal ?? 0) - (b.ordinal ?? 0) || a.id.localeCompare(b.id));
+
+		const outcomes: AutonomousTaskOutcome[] = [];
+		for (const queued of orderedTasks) {
+			// Re-read before spending a run on it: another writer may have already moved it since the query above.
+			const current = await this.loadTaskById(queued.id, { includeCrossBranch: false });
+			if (!current || current.status !== triggerStatus) {
+				outcomes.push({ taskId: queued.id, result: "skipped", detail: "status changed before the run started" });
+				continue;
+			}
+
+			const callbackResult = await executeStatusCallback({
+				command: agentCommand,
+				taskId: current.id,
+				taskTitle: current.title,
+				cwd: this.fs.rootDir,
+				timeoutMs,
+			});
+
+			if (!callbackResult.success) {
+				const detail = callbackResult.error ?? `agent command exited with code ${callbackResult.exitCode ?? "unknown"}`;
+				await this.updateTaskFromInput(current.id, {
+					appendImplementationNotes: [`Autonomous run failed: ${detail}`],
+				}).catch((error) => {
+					console.error(`Failed to record autonomous run failure for ${current.id}:`, error);
+				});
+				outcomes.push({ taskId: current.id, result: "failed", detail });
+				continue;
+			}
+
+			// Re-read again: the agent itself may have edited the task while it ran.
+			const afterRun = await this.loadTaskById(current.id, { includeCrossBranch: false });
+			if (!afterRun || afterRun.status !== triggerStatus) {
+				outcomes.push({
+					taskId: current.id,
+					result: "skipped",
+					detail: "status changed while the run was in progress",
+				});
+				continue;
+			}
+
+			await this.updateTaskFromInput(current.id, { status: reviewStatus });
+			outcomes.push({ taskId: current.id, result: "movedToReview" });
+		}
+
+		return { disabled: false, outcomes };
 	}
 
 	async editTask(
