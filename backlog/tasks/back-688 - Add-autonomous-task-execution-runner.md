@@ -1,11 +1,11 @@
 ---
 id: BACK-688
 title: Add autonomous task execution runner
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-18 17:12'
-updated_date: '2026-09-18 17:44'
+updated_date: '2026-09-18 18:13'
 labels: []
 dependencies: []
 ordinal: 319000
@@ -19,20 +19,20 @@ Tasks on the Kanban board can already use any configured status string, but ther
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A new CLI command (e.g. backlog task run-autonomous) finds tasks whose status matches a configured trigger status and is a no-op when that status is not configured
-- [ ] #2 For each matched task, the command invokes an agent using the project's existing task-execution instructions and processes tasks sequentially, respecting existing task locking
-- [ ] #3 On completion the task's status is changed to a configured review status distinct from the trigger status, never directly to a terminal/Done status
-- [ ] #4 A failed or interrupted run leaves the task in a state a human can understand and resume (task is not left silently stuck or duplicated on the next run)
-- [ ] #5 The trigger and review status names are read from project config, not hardcoded
-- [ ] #6 Behavior is documented in CLI help and in a guide analogous to doc-003 showing how to schedule the command with cron/systemd/launchd/Task Scheduler
-- [ ] #7 A configurable per-task timeout stops a run that hangs or runs too long, leaving the task in the same human-resumable state as a failed run, so one stuck task cannot block the rest of the queue indefinitely
+- [x] #1 A new CLI command (e.g. backlog task run-autonomous) finds tasks whose status matches a configured trigger status and is a no-op when that status is not configured
+- [x] #2 For each matched task, the command invokes an agent using the project's existing task-execution instructions and processes tasks sequentially, respecting existing task locking
+- [x] #3 On completion the task's status is changed to a configured review status distinct from the trigger status, never directly to a terminal/Done status
+- [x] #4 A failed or interrupted run leaves the task in a state a human can understand and resume (task is not left silently stuck or duplicated on the next run)
+- [x] #5 The trigger and review status names are read from project config, not hardcoded
+- [x] #6 Behavior is documented in CLI help and in a guide analogous to doc-003 showing how to schedule the command with cron/systemd/launchd/Task Scheduler
+- [x] #7 A configurable per-task timeout stops a run that hangs or runs too long, leaving the task in the same human-resumable state as a failed run, so one stuck task cannot block the rest of the queue indefinitely
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 bunx tsc --noEmit passes when TypeScript touched
-- [ ] #2 bun run check . passes when formatting/linting touched
-- [ ] #3 bun test (or scoped test) passes
+- [x] #1 bunx tsc --noEmit passes when TypeScript touched
+- [x] #2 bun run check . passes when formatting/linting touched
+- [x] #3 bun test (or scoped test) passes
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -69,4 +69,12 @@ Confirmed decisions (Alex, 2026-09-18):
 
 <!-- SECTION:NOTES:BEGIN -->
 Implemented config fields (autonomousTriggerStatus, autonomousReviewStatus, autonomousTaskTimeoutMinutes, autonomousAgentCommand), Core.runAutonomousTasks(), and the 'backlog task run-autonomous' CLI command. tsc and biome check pass. Next: doc-003-style scheduling guide and tests.
+
+Added doc-4 (scheduling guide) and tests (src/test/autonomous-runner.test.ts, plus additions to cli-task-state.test.ts and config-commands.test.ts) - 51 tests pass. Ran the full 'bun run test' suite: 5 unrelated pre-existing failures (backlog doctor drafts scan, TUI gpg-sign persistence, config watcher timing, duplicate-repair reference check, and a missing ssh-keygen executable in this environment) plus 1 simulated 'disk full' test error in server-documents-endpoint.test.ts - none touch files this task changed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added `backlog task run-autonomous`: picks up tasks in a configured autonomousTriggerStatus, runs the configured agent command against each sequentially, and moves a successful run to autonomousReviewStatus (fails closed if that status isn't configured or equals the trigger status) rather than a terminal status. A failed or timed-out run leaves the task's status unchanged with an implementation note explaining why, so it is retried and stays understandable to a human. Reused existing infrastructure (queryTasks, editTask's per-task locking, executeStatusCallback extended with a timeout) instead of new mechanisms. Documented in CLI help and a new scheduling guide (doc-4, mirroring doc-003). Verified with 51 new/updated tests (Core logic, CLI integration, config get/set/list round-trip) plus tsc --noEmit and biome check, all passing; the full suite's 5 failures/1 error are pre-existing and unrelated to the changed files.
+<!-- SECTION:FINAL_SUMMARY:END -->
